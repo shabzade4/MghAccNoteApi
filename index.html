@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>دمو API — لاگین و مخاطبین</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: Vazirmatn, Tahoma, sans-serif; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 1rem; }
+    .input { width: 100%; border: 1px solid #cbd5e1; border-radius: 0.75rem; padding: 0.65rem 0.85rem; font-size: 0.9rem; }
+    .input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
+    .btn { border-radius: 0.75rem; padding: 0.65rem 1rem; font-weight: 600; font-size: 0.9rem; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-ghost { background: #f1f5f9; color: #334155; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+  <div class="max-w-3xl mx-auto p-4 space-y-4">
+    <header class="flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h1 class="text-xl font-bold text-slate-800">دمو UI → API → دیتابیس</h1>
+        <p class="text-xs text-slate-500 mt-0.5">لاگین و مخاطبین از طریق Serverless روی Vercel</p>
+      </div>
+      <div id="user-bar" class="hidden text-sm flex items-center gap-2">
+        <span id="user-name" class="font-medium text-slate-700"></span>
+        <button onclick="logout()" class="btn btn-ghost text-xs py-1.5">خروج</button>
+      </div>
+    </header>
+
+    <!-- LOGIN -->
+    <section id="login-box" class="card p-5 space-y-3">
+      <h2 class="font-bold text-slate-800">ورود از طریق API</h2>
+      <p class="text-xs text-slate-500">درخواست به <code class="bg-slate-100 px-1 rounded">POST /api/login</code> — کلید دیتابیس فقط روی سرور است.</p>
+      <div>
+        <label class="text-xs font-medium text-slate-600">نام کاربری</label>
+        <input id="login-user" class="input mt-1" value="admin" autocomplete="username" />
+      </div>
+      <div>
+        <label class="text-xs font-medium text-slate-600">رمز عبور</label>
+        <input id="login-pass" type="password" class="input mt-1" value="admin" autocomplete="current-password" />
+      </div>
+      <button onclick="doLogin()" class="btn btn-primary w-full">ورود</button>
+      <p id="login-msg" class="text-xs text-slate-500"></p>
+    </section>
+
+    <!-- CONTACTS -->
+    <section id="app-box" class="hidden space-y-4">
+      <div class="card p-5 space-y-3">
+        <h2 class="font-bold text-slate-800">افزودن مخاطب</h2>
+        <p class="text-xs text-slate-500"><code class="bg-slate-100 px-1 rounded">POST /api/contacts</code> با هدر Authorization</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-medium">نام *</label>
+            <input id="c-name" class="input mt-1" placeholder="نام کامل" />
+          </div>
+          <div>
+            <label class="text-xs font-medium">موبایل</label>
+            <input id="c-mobile" class="input mt-1" placeholder="09xxxxxxxxx" dir="ltr" />
+          </div>
+          <div>
+            <label class="text-xs font-medium">ایمیل</label>
+            <input id="c-email" class="input mt-1" placeholder="email@example.com" dir="ltr" />
+          </div>
+          <div>
+            <label class="text-xs font-medium">دسته</label>
+            <input id="c-cat" class="input mt-1" value="دوستان" />
+          </div>
+        </div>
+        <button onclick="addContact()" class="btn btn-primary">ثبت مخاطب</button>
+        <p id="form-msg" class="text-xs text-slate-500"></p>
+      </div>
+
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-slate-800">لیست مخاطبین</h2>
+          <button onclick="loadContacts()" class="btn btn-ghost text-xs py-1.5">بروزرسانی</button>
+        </div>
+        <div id="contacts-list" class="space-y-2 text-sm">
+          <p class="text-slate-400">در حال بارگذاری...</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-[11px] text-slate-400 text-center py-4">
+      دمو امنیتی · <a class="underline" href="/api/health" target="_blank">تست سرور /api/health</a>
+    </footer>
+  </div>
+
+  <script>
+    const TOKEN_KEY = 'mgh_demo_token';
+    const USER_KEY = 'mgh_demo_user';
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+    function setSession(token, user) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
+    }
+    function clearSession() {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
+
+    async function api(path, options = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      const token = getToken();
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      const res = await fetch(path, { ...options, headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        let msg = data.error || res.statusText || 'خطا';
+        if (data.debug && data.debug.length) msg += ' | ' + data.debug.join(' · ');
+        const err = new Error(msg);
+        err.status = res.status;
+        err.payload = data;
+        throw err;
+      }
+      return data;
+    }
+
+    function showApp(user) {
+      document.getElementById('login-box').classList.add('hidden');
+      document.getElementById('app-box').classList.remove('hidden');
+      document.getElementById('user-bar').classList.remove('hidden');
+      document.getElementById('user-name').innerText = (user && (user.name || user.username)) || 'کاربر';
+      loadContacts();
+    }
+
+    function showLogin() {
+      document.getElementById('login-box').classList.remove('hidden');
+      document.getElementById('app-box').classList.add('hidden');
+      document.getElementById('user-bar').classList.add('hidden');
+    }
+
+    async function doLogin() {
+      const msg = document.getElementById('login-msg');
+      msg.innerText = 'در حال ورود...';
+      msg.className = 'text-xs text-slate-500';
+      try {
+        const username = document.getElementById('login-user').value.trim();
+        const password = document.getElementById('login-pass').value;
+        const data = await api('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password })
+        });
+        setSession(data.token, data.user);
+        msg.innerText = 'ورود موفق';
+        msg.className = 'text-xs text-emerald-600';
+        showApp(data.user);
+      } catch (e) {
+        msg.innerText = e.message || 'خطا در ورود';
+        msg.className = 'text-xs text-red-600';
+      }
+    }
+
+    function logout() {
+      clearSession();
+      showLogin();
+    }
+
+    async function loadContacts() {
+      const box = document.getElementById('contacts-list');
+      box.innerHTML = '<p class="text-slate-400">در حال بارگذاری...</p>';
+      try {
+        const data = await api('/api/contacts');
+        const list = data.data || [];
+        if (!list.length) {
+          box.innerHTML = '<p class="text-slate-400">مخاطبی نیست. یکی اضافه کنید.</p>';
+          return;
+        }
+        box.innerHTML = list.map(c => `
+          <div class="flex items-center justify-between gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50">
+            <div class="min-w-0">
+              <p class="font-semibold truncate">${escapeHtml(c.name || '—')}</p>
+              <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(c.mobile || c.phones || '')} ${c.email ? '· ' + escapeHtml(c.email) : ''}</p>
+              <p class="text-[10px] text-slate-400">${escapeHtml(c.category || '')}</p>
+            </div>
+            <button onclick="deleteContact('${c.id}')" class="btn btn-danger text-xs py-1.5 shrink-0">حذف</button>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (e.status === 401) { logout(); return; }
+        box.innerHTML = `<p class="text-red-600 text-xs">${escapeHtml(e.message)}</p>`;
+      }
+    }
+
+    async function addContact() {
+      const msg = document.getElementById('form-msg');
+      const name = document.getElementById('c-name').value.trim();
+      if (!name) { msg.innerText = 'نام الزامی است'; msg.className = 'text-xs text-red-600'; return; }
+      msg.innerText = 'در حال ثبت...';
+      msg.className = 'text-xs text-slate-500';
+      try {
+        await api('/api/contacts', {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            mobile: document.getElementById('c-mobile').value.trim(),
+            email: document.getElementById('c-email').value.trim(),
+            category: document.getElementById('c-cat').value.trim() || 'دوستان'
+          })
+        });
+        document.getElementById('c-name').value = '';
+        document.getElementById('c-mobile').value = '';
+        document.getElementById('c-email').value = '';
+        msg.innerText = 'ثبت شد';
+        msg.className = 'text-xs text-emerald-600';
+        loadContacts();
+      } catch (e) {
+        if (e.status === 401) { logout(); return; }
+        msg.innerText = e.message;
+        msg.className = 'text-xs text-red-600';
+      }
+    }
+
+    async function deleteContact(id) {
+      if (!confirm('حذف این مخاطب؟')) return;
+      try {
+        await api('/api/contacts?id=' + encodeURIComponent(id), { method: 'DELETE' });
+        loadContacts();
+      } catch (e) {
+        if (e.status === 401) logout();
+        else alert(e.message);
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // boot
+    (function () {
+      const token = getToken();
+      if (token) {
+        try {
+          const user = JSON.parse(localStorage.getItem(USER_KEY) || '{}');
+          showApp(user);
+        } catch { showLogin(); }
+      } else showLogin();
+    })();
+  </script>
+</body>
+</html>

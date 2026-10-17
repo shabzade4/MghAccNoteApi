@@ -1,0 +1,9 @@
+{
+  "name": "mgh-contacts-api-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "دمو UI + API لاگین و مخاطبین برای Vercel (پلن رایگان)",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
